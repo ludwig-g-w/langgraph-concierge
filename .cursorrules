@@ -1,0 +1,83 @@
+# .cursorrules file for LangGraph in LangChain Projects (Typescript)
+
+## General Guidelines
+
+- You are an expert in Typescript, LangChain.js, and LangGraph.
+- Write modern, clean Typescript code adhering to ES6+ standards.
+- Use functional programming principles where appropriate.
+- Prefer `const` over `let`, and avoid `var`.
+
+## LangGraph-Specific Instructions
+
+- Utilize LangGraph for building stateful multi-actor workflows with LLMs in Typescript.
+- Implement workflows using directed acyclic graphs (DAGs) to model task dependencies.
+- Ensure nodes in the graph represent atomic operations or decisions.
+- Use descriptive names for nodes and edges to enhance graph readability.
+- Use descriptive names for tools.
+
+## Coding Standards
+
+- Follow consistent naming conventions:
+  - Variables and functions: camelCase
+  - Classes: PascalCase
+  - Constants: UPPER_SNAKE_CASE
+- Use arrow functions for callbacks and anonymous functions.
+
+## Asynchronous Programming
+
+- Use async/await for asynchronous operations instead of callbacks.
+- Properly handle Promises and catch potential errors.
+
+## Error Handling
+
+- Implement robust error handling for API calls and chain executions.
+- Use try/catch blocks to handle exceptions gracefully within nodes.
+
+## File Structure
+
+- Organize the project as follows:
+  - `src/graphs`: Contains LangGraph workflow definitions
+  - `src/nodes`: Contains reusable node functions
+  - `src/utils`: Contains utility functions shared across workflows
+  - `tests`: Contains unit tests for workflows and nodes
+
+## Libraries and Dependencies
+
+- Use LangChain.js libraries and import from appropriate modules.
+- For data storage or retrieval, prefer vector databases compatible with LangChain.js.
+
+## Testing Guidelines
+
+- Write unit tests using a framework like Jest.
+- Test individual graph nodes to ensure component correctness.
+- Implement integration tests for complete workflows.
+- Aim for at least 90% test coverage.
+
+## Documentation Standards
+
+- Document each graph workflow with a high-level description of its purpose and structure.
+- Include inline comments explaining complex logic or decisions within nodes.
+
+## Performance Optimization
+
+- Optimize graph execution by leveraging asynchronous operations where possible.
+- Use appropriate data structures to minimize memory usage and improve performance.
+
+## AI Behavior Customization
+
+- When generating code, prioritize readability and maintainability.
+- Avoid hardcoding values; use configuration files or environment variables instead.
+
+# Example Prompts for Cursor AI Assistance
+
+## Workflow Creation
+
+"Create a new LangGraph workflow in Typescript, ensuring each node represents a single, testable operation. Use async/await for asynchronous tasks."
+
+## Debugging Assistance
+
+"Provide suggestions to debug a failing node in a LangGraph workflow implemented in Typescript. Focus on Promise handling and potential asynchronous issues."
+
+## Optimization Tips
+
+"Suggest ways to optimize a LangGraph workflow in Typescript by leveraging asynchronous operations or reducing redundant computations."

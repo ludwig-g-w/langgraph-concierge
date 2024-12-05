@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { ensureConfiguration } from "../src/memory_agent/configuration.js";
+import { ensureConfiguration } from "../src/configuration.js";
 
 describe("Configuration", () => {
   it("should initialize configuration from an empty object", () => {

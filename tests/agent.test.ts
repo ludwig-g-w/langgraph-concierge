@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@jest/globals";
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
-import { graph, routeMessage, callModel } from "../src/memory_agent/graph.js";
+import { graph, routeMessage, callModel } from "../src/graph.js";
 import { InMemoryStore } from "@langchain/langgraph";
 
 describe("Graph", () => {

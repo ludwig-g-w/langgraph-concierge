@@ -1,5 +1,5 @@
 import { InMemoryStore } from "@langchain/langgraph";
-import { initializeTools } from "../src/memory_agent/tools.js";
+import { initializeTools } from "../src/tools.js";
 
 describe("Tools", () => {
   describe.skip("findPlaces", () => {
