@@ -1,15 +1,20 @@
-import { BaseMessage } from "@langchain/core/messages";
+import { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { Annotation, messagesStateReducer } from "@langchain/langgraph";
+import { SYSTEM_PROMPT } from "./prompts.js";
 
 /**
  * Main graph state.
  */
 export const GraphAnnotation = Annotation.Root({
-  /**
-   * The messages in the conversation.
-   */
+  userFeedback: Annotation<string | undefined>(),
+  questions: Annotation<string[] | undefined>(),
   messages: Annotation<BaseMessage[]>({
     reducer: messagesStateReducer,
-    default: () => [],
+    default: () => [
+      new SystemMessage({
+        content: SYSTEM_PROMPT,
+      }),
+    ],
   }),
+  suggestions: Annotation<string[] | undefined>(),
 });

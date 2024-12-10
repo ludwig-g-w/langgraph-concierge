@@ -1,20 +1,32 @@
 import { describe, expect, it } from "@jest/globals";
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
-import { AIMessage, HumanMessage } from "@langchain/core/messages";
-import { graph, routeMessage, callModel } from "../src/graph.js";
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+} from "@langchain/core/messages";
+import { graph, routeMessage, doResearch } from "../src/graph.js";
 import { InMemoryStore } from "@langchain/langgraph";
+import { SYSTEM_PROMPT } from "../src/prompts.js";
+
+const baseState = {
+  userFeedback: undefined,
+  questions: undefined,
+  suggestions: undefined,
+  messages: [new SystemMessage({ content: SYSTEM_PROMPT })],
+};
 
 describe("Graph", () => {
-  describe("callModel", () => {
-    it("sahould return END", async () => {
-      const result = await callModel(
+  describe("doResearch", () => {
+    it("should return END", async () => {
+      const result = await doResearch(
         {
+          ...baseState,
           messages: [new HumanMessage("find me a restaurant in San Francisco")],
         },
         {
           store: new InMemoryStore(),
           configurable: {
-            systemPrompt: "this is a part of a automated unit test",
             userId: "test",
             model: "gpt-4o-mini",
           },
@@ -31,6 +43,7 @@ describe("Graph", () => {
     it("should return store_memory", () => {
       expect(
         routeMessage({
+          ...baseState,
           messages: [
             new AIMessage({
               content: "test",
@@ -43,6 +56,7 @@ describe("Graph", () => {
     it("should return find_places", () => {
       expect(
         routeMessage({
+          ...baseState,
           messages: [
             new AIMessage({
               content: "where is the nearest restaurant?",

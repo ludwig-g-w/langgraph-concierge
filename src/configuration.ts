@@ -1,7 +1,7 @@
 // Define the configurable parameters for the agent
 
 import { Annotation, LangGraphRunnableConfig } from "@langchain/langgraph";
-import { SYSTEM_PROMPT } from "./prompts.js";
+import { MEMORY_PROMPT, SYSTEM_PROMPT } from "./prompts.js";
 
 export const ConfigurationAnnotation = Annotation.Root({
   userId: Annotation<string>(),
@@ -16,6 +16,6 @@ export function ensureConfiguration(config?: LangGraphRunnableConfig) {
   return {
     userId: configurable?.userId || "default",
     model: configurable?.model || "gpt-4o-mini",
-    systemPrompt: configurable?.systemPrompt || SYSTEM_PROMPT,
+    memoryPrompt: configurable?.systemPrompt || MEMORY_PROMPT,
   };
 }
