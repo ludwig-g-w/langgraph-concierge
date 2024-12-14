@@ -17,4 +17,10 @@ export const GraphAnnotation = Annotation.Root({
     ],
   }),
   suggestions: Annotation<string[] | undefined>(),
+  hasEnoughKnowledge: Annotation<boolean>({
+    value: (x: boolean, y: boolean) => y,
+    default: () => false,
+  }),
+  savedMemories: Annotation<any[] | undefined>(),
+  userRequest: Annotation<string | undefined>(),
 });

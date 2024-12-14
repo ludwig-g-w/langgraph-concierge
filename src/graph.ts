@@ -1,112 +1,117 @@
 // Main graph
-import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
-
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
-import { AIMessage, BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
+import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import {
   END,
+  InMemoryStore,
   LangGraphRunnableConfig,
   MemorySaver,
   START,
   StateGraph,
 } from "@langchain/langgraph";
-import { ToolNode } from "@langchain/langgraph/prebuilt";
-import { initChatModel } from "langchain/chat_models/universal";
-import {
-  ConfigurationAnnotation,
-  ensureConfiguration,
-} from "./configuration.js";
+import { ChatOpenAI } from "@langchain/openai";
+import { ensureConfiguration } from "./configuration.js";
+import { QUESTION_PROMPT, SUGGESTION_PROMPT } from "./prompts.js";
 import { GraphAnnotation } from "./state.js";
-import { initializeTools } from "./tools.js";
 import { getStoreFromConfigOrThrow, splitModelAndProvider } from "./utils.js";
 import { z } from "zod";
+import { initializeTools } from "./tools.js";
 
-const llm = await initChatModel();
+const llm = new ChatOpenAI({
+  modelName: "gpt-4o-mini",
+  temperature: 0.7,
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export const NODES = {
-  DO_RESEARCH: "do_research",
-  STORE_MEMORY: "store_memory",
-  TOOLS: "tools",
-  HUMAN_INPUT: "human_input",
-  GATHER_INFO: "gather_info",
+  CHECK_KNOWLEDGE: "check_knowledge",
+  LOOK_SAVED_MEMORIES: "look_saved_memories",
+  ASK_SPECIFIC_QUESTIONS: "ask_specific_questions",
+  SAVE_USER_ANSWERS: "save_user_answers",
+  GENERATE_SUGGESTIONS: "generate_suggestions",
 } as const;
 
-type NodeKeys = (typeof NODES)[keyof typeof NODES];
-
-export async function hasEnoughInformationAboutUser(
+export async function checkKnowledge(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<typeof NODES.GATHER_INFO | typeof NODES.DO_RESEARCH> {
+): Promise<{ hasEnoughKnowledge: boolean }> {
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
   const memories = await store.search(["memories", configurable.userId], {
     limit: 10,
   });
-  if (memories.length > 3) {
-    return NODES.DO_RESEARCH;
+
+  // If we have no memories, we definitely need more information
+  if (memories.length === 0) {
+    return { hasEnoughKnowledge: false };
   }
-  return NODES.GATHER_INFO;
+
+  const formattedMemories = memories
+    .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
+    .join("\n");
+
+  const result = await llm.invoke([
+    {
+      role: "system",
+      content: `You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
+Based on their request and the information we have, determine if we need to ask more questions.
+
+Consider:
+1. Do we know their basic preferences (indoor/outdoor, social/solo, etc.)?
+2. Do we know their interests (arts, sports, food, etc.)?
+3. Do we know their practical constraints (budget, location, timing)?
+4. Is the information we have relevant to their current request?
+
+Respond with either "SUFFICIENT" or "INSUFFICIENT" followed by a brief explanation.`,
+    },
+    {
+      role: "user",
+      content: `User's Request: ${state.userRequest}
+
+Known Information:
+${formattedMemories}`,
+    },
+  ]);
+
+  const response = result.content.toString().toUpperCase();
+  return { hasEnoughKnowledge: response.startsWith("SUFFICIENT") };
 }
 
-export async function gatherInfo(
+export async function lookSavedMemories(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-) {
+): Promise<{ savedMemories: any[] }> {
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
   const memories = await store.search(["memories", configurable.userId], {
     limit: 10,
   });
-
-  const formatted =
-    memories
-      ?.map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
-      ?.join("\n") || "";
-
-  const memoryPrompt = configurable.memoryPrompt
-    .replace("{user_info}", formatted)
-    .replace("{time}", new Date().toISOString());
-
-  const humanMessages = state.messages.filter((m) => m.getType() === "human");
-  const lastHumanMessage = humanMessages[humanMessages.length - 1];
-
-  const result = await llm.invoke(
-    [
-      { role: "system", content: memoryPrompt },
-      {
-        role: "system",
-        content: `there is not enough information about the user to answer the following question: ${state.userQuestion}. Please ask the user to answer ${3 - memories.length} single-choice questions (A/B/C/D) to help you learn more about them before proceeding.`,
-      },
-    ],
-    {
-      configurable: splitModelAndProvider(configurable.model),
-    },
-  );
-
-  return {
-    messages: [result],
-  };
+  return { savedMemories: memories };
 }
 
-export async function userAnswersQuestions(
+export async function askSpecificQuestions(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
 ): Promise<{ messages: BaseMessage[] }> {
-  return { messages: [] };
+  const result = await llm.invoke([
+    {
+      role: "system",
+      content: QUESTION_PROMPT,
+    },
+  ]);
+  return { messages: [result] };
 }
 
 export async function saveUserAnswers(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-) {
-  const lastMessage = state.messages[state.messages.length - 1] as HumanMessage;
-  const formatted = lastMessage.content;
-  const store = getStoreFromConfigOrThrow(config);
+): Promise<{ messages: BaseMessage[] }> {
   const configurable = ensureConfiguration(config);
-  const tools = initializeTools(config);
 
+  const upsertMemoryTool = initializeTools(config);
   const boundLLM = llm.bind({
-    tools: [tools[0]],
+    tools: upsertMemoryTool,
     tool_choice: "upsertMemory",
   });
 
@@ -114,8 +119,7 @@ export async function saveUserAnswers(
     [
       {
         role: "system",
-        content: `Save the following user answers to the database. \
-        The user answers are: ${formatted}`,
+        content: `Extract key information from the user's answers and format it for storage`,
       },
       ...state.messages,
     ],
@@ -127,131 +131,105 @@ export async function saveUserAnswers(
   return { messages: [result] };
 }
 
-export async function doResearch(
+export async function generateSuggestions(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<{ messages: BaseMessage[] }> {
-  const store = getStoreFromConfigOrThrow(config);
-  const configurable = ensureConfiguration(config);
-  const memories = await store.search(["memories", configurable.userId], {
-    limit: 10,
-  });
-
-  let formatted =
-    memories
-      ?.map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
-      ?.join("\n") || "";
-  if (formatted) {
-    formatted = `\n<memories>\n${formatted}\n</memories>`;
-  }
-
-  const memoryPrompt = configurable.memoryPrompt
-    .replace("{user_info}", formatted)
-    .replace("{time}", new Date().toISOString());
-
-  const tools = initializeTools(config);
+): Promise<{ messages: BaseMessage[]; suggestions: string[] }> {
+  const tools = [new GooglePlacesAPI(), new TavilySearchResults()];
   const boundLLM = llm.bind({
-    tools: [...tools, new GooglePlacesAPI(), new TavilySearchResults()],
+    tools,
     tool_choice: "auto",
   });
 
-  const result = await boundLLM.invoke(
-    [{ role: "system", content: memoryPrompt }, ...state.messages],
+  const memories = state.savedMemories || [];
+  const formattedMemories = memories
+    .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
+    .join("\n");
+
+  const result = await boundLLM.invoke([
     {
-      configurable: splitModelAndProvider(configurable.model),
+      role: "system",
+      content: SUGGESTION_PROMPT,
     },
-  );
+    {
+      role: "user",
+      content: `User Information:\n${formattedMemories}\nRequest: ${state.userRequest}`,
+    },
+  ]);
 
-  return { messages: [result] };
-}
-
-async function storeMemory(
-  state: typeof GraphAnnotation.State,
-  config: LangGraphRunnableConfig,
-): Promise<{ messages: BaseMessage[] }> {
-  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
-  const toolCalls = lastMessage.tool_calls || [];
-
-  const tools = initializeTools(config);
-  const upsertMemoryTool = tools[0];
-
-  const savedMemories = await Promise.all(
-    toolCalls.map(async (tc) => {
-      return await upsertMemoryTool.invoke(tc);
-    }),
-  );
-
-  return { messages: savedMemories };
-}
-
-export function routeMessage(
-  state: typeof GraphAnnotation.State,
-): NodeKeys | typeof END {
-  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
-  if (lastMessage?.tool_calls?.[0]?.name === "upsertMemory") {
-    return NODES.STORE_MEMORY;
-  }
-  if (
-    lastMessage?.tool_calls?.[0]?.name &&
-    lastMessage?.tool_calls?.[0]?.name !== "upsertMemory"
-  ) {
-    return NODES.TOOLS;
-  }
-
-  return NODES.HUMAN_INPUT;
-}
-
-function humanInput() {
-  return;
-}
-
-export function isSatisfiedWithResponse(
-  state: typeof GraphAnnotation.State,
-): typeof NODES.DO_RESEARCH | typeof NODES.HUMAN_INPUT | typeof END {
-  if (state.userFeedback === "retry") {
-    return NODES.DO_RESEARCH;
-  }
-  if (state.userFeedback === "done") {
-    return END;
-  }
-  return NODES.HUMAN_INPUT;
-}
-
-export const builder = new StateGraph(
-  {
-    stateSchema: GraphAnnotation,
-  },
-  ConfigurationAnnotation,
-)
-  .addNode(NODES.DO_RESEARCH, doResearch)
-  .addNode(NODES.STORE_MEMORY, storeMemory)
-  .addNode(
-    NODES.TOOLS,
-    new ToolNode([
-      new GooglePlacesAPI(),
-      new TavilySearchResults({
-        maxResults: 5,
-      }),
-    ]),
+  // Extract suggestions from the LLM response
+  const suggestions = (
+    typeof result.content === "string"
+      ? result.content
+      : JSON.stringify(result.content)
   )
-  .addNode(NODES.HUMAN_INPUT, humanInput)
-  .addEdge(START, NODES.DO_RESEARCH)
-  .addConditionalEdges(NODES.DO_RESEARCH, routeMessage, {
-    [NODES.STORE_MEMORY]: NODES.STORE_MEMORY,
-    [NODES.TOOLS]: NODES.TOOLS,
-    [NODES.HUMAN_INPUT]: NODES.HUMAN_INPUT,
+    .split("\n")
+    .filter((line: string) => line.trim().length > 0)
+    .map((line: string) => line.trim());
+
+  return {
+    messages: [result],
+    suggestions,
+  };
+}
+
+export function routeBasedOnKnowledge(
+  state: typeof GraphAnnotation.State,
+): typeof NODES.LOOK_SAVED_MEMORIES | typeof NODES.ASK_SPECIFIC_QUESTIONS {
+  return state.hasEnoughKnowledge
+    ? NODES.LOOK_SAVED_MEMORIES
+    : NODES.ASK_SPECIFIC_QUESTIONS;
+}
+
+export function routeAfterQuestions(
+  state: typeof GraphAnnotation.State,
+): typeof NODES.SAVE_USER_ANSWERS {
+  return NODES.SAVE_USER_ANSWERS;
+}
+
+export function routeAfterSaving(
+  state: typeof GraphAnnotation.State,
+): typeof NODES.CHECK_KNOWLEDGE {
+  return NODES.CHECK_KNOWLEDGE;
+}
+
+export function checkUserSatisfaction(
+  state: typeof GraphAnnotation.State,
+): typeof NODES.ASK_SPECIFIC_QUESTIONS | typeof END {
+  return state.userFeedback === "satisfied"
+    ? END
+    : NODES.ASK_SPECIFIC_QUESTIONS;
+}
+
+export const builder = new StateGraph({
+  stateSchema: GraphAnnotation,
+})
+  .addNode(NODES.CHECK_KNOWLEDGE, checkKnowledge)
+  .addNode(NODES.LOOK_SAVED_MEMORIES, lookSavedMemories)
+  .addNode(NODES.ASK_SPECIFIC_QUESTIONS, askSpecificQuestions)
+  .addNode(NODES.SAVE_USER_ANSWERS, saveUserAnswers)
+  .addNode(NODES.GENERATE_SUGGESTIONS, generateSuggestions)
+  .addEdge(START, NODES.CHECK_KNOWLEDGE)
+  .addConditionalEdges(NODES.CHECK_KNOWLEDGE, routeBasedOnKnowledge, {
+    [NODES.LOOK_SAVED_MEMORIES]: NODES.LOOK_SAVED_MEMORIES,
+    [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
   })
-  .addEdge(NODES.STORE_MEMORY, NODES.DO_RESEARCH)
-  .addEdge(NODES.TOOLS, NODES.DO_RESEARCH)
-  .addEdge(NODES.DO_RESEARCH, NODES.HUMAN_INPUT)
-  .addConditionalEdges(NODES.HUMAN_INPUT, isSatisfiedWithResponse, {
-    [NODES.DO_RESEARCH]: NODES.DO_RESEARCH,
+  .addEdge(NODES.LOOK_SAVED_MEMORIES, NODES.GENERATE_SUGGESTIONS)
+  // New flow for handling questions and answers
+  .addConditionalEdges(NODES.ASK_SPECIFIC_QUESTIONS, routeAfterQuestions, {
+    [NODES.SAVE_USER_ANSWERS]: NODES.SAVE_USER_ANSWERS,
+  })
+  .addConditionalEdges(NODES.SAVE_USER_ANSWERS, routeAfterSaving, {
+    [NODES.CHECK_KNOWLEDGE]: NODES.CHECK_KNOWLEDGE,
+  })
+  .addConditionalEdges(NODES.GENERATE_SUGGESTIONS, checkUserSatisfaction, {
+    [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
     [END]: END,
   });
 
 export const graph = builder.compile({
   checkpointer: new MemorySaver(),
-  interruptBefore: [NODES.HUMAN_INPUT],
+  interruptBefore: [NODES.SAVE_USER_ANSWERS],
 });
 
 graph.name = "concierge_agent";

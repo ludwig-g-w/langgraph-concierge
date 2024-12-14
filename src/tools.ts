@@ -19,11 +19,19 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
    * @returns A string confirming the memory storage.
    */
   async function upsertMemory(opts: {
-    content: string;
-    context: string;
+    preferences: {
+      type: string;
+      social: string;
+      interests: string[];
+      constraints: {
+        budget: string;
+        location: string;
+        timing: string;
+      };
+    };
     memoryId?: string;
   }): Promise<string> {
-    const { content, context, memoryId } = opts;
+    const { preferences, memoryId } = opts;
     if (!config || !config.store) {
       throw new Error("Config or store not provided");
     }
@@ -33,8 +41,7 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
     const store = getStoreFromConfigOrThrow(config);
 
     await store.put(["memories", configurable.userId], memId, {
-      content,
-      context,
+      preferences,
     });
 
     return `Stored memory ${memId}`;
@@ -48,20 +55,22 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
       If the user corrects a memory, update it. Can call multiple times in parallel \
       if you need to store or update multiple memories.",
     schema: z.object({
-      content: z.string().describe(
-        "The main content of the memory. For example: \
-          'User expressed interest in learning about French.'",
-      ),
-      context: z.string().describe(
-        "Additional context for the memory. For example: \
-          'This was mentioned while discussing career options in Europe.'",
-      ),
       memoryId: z
         .string()
         .optional()
         .describe(
           "The memory ID to overwrite. Only provide if updating an existing memory.",
         ),
+      preferences: z.object({
+        type: z.string().describe("Indoor/Outdoor/Both"),
+        social: z.string().describe("Solo/Group/Both"),
+        interests: z.array(z.string()).describe("Array of interests"),
+        constraints: z.object({
+          budget: z.string().describe("Budget"),
+          location: z.string().describe("Location"),
+          timing: z.string().describe("Timing"),
+        }),
+      }),
     }),
   });
 
