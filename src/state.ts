@@ -7,7 +7,6 @@ import { SYSTEM_PROMPT } from "./prompts.js";
  */
 export const GraphAnnotation = Annotation.Root({
   userFeedback: Annotation<string | undefined>(),
-  questions: Annotation<string[] | undefined>(),
   messages: Annotation<BaseMessage[]>({
     reducer: messagesStateReducer,
     default: () => [
@@ -16,11 +15,9 @@ export const GraphAnnotation = Annotation.Root({
       }),
     ],
   }),
-  suggestions: Annotation<string[] | undefined>(),
   hasEnoughKnowledge: Annotation<boolean>({
     value: (x: boolean, y: boolean) => y,
     default: () => false,
   }),
-  savedMemories: Annotation<any[] | undefined>(),
-  userRequest: Annotation<string | undefined>(),
+  userRequest: Annotation<string>(),
 });

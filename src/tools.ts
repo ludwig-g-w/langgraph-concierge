@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from "uuid";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getStoreFromConfigOrThrow } from "./utils.js";
-import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
 
 /**
  * Initialize tools within a function so that they have access to the current
@@ -35,10 +34,9 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
     if (!config || !config.store) {
       throw new Error("Config or store not provided");
     }
-
     const configurable = ensureConfiguration(config);
-    const memId = memoryId || uuidv4();
     const store = getStoreFromConfigOrThrow(config);
+    const memId = memoryId || uuidv4();
 
     await store.put(["memories", configurable.userId], memId, {
       preferences,

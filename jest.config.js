@@ -15,7 +15,6 @@ export default {
   setupFiles: ["dotenv/config"],
   passWithNoTests: true,
   testTimeout: 20_000,
-  silent: true,
   testEnvironment: "node",
   setupFilesAfterEnv: ["./jest.setup.js"],
 };

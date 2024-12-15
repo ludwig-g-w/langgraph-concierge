@@ -1,7 +1,6 @@
-import { BaseMessage } from "@langchain/core/messages";
-import { InMemoryStore } from "@langchain/langgraph";
+import { InMemoryStore, MemorySaver, Command } from "@langchain/langgraph";
 import { Configuration } from "./configuration.js";
-import { graph } from "./graph.js";
+import { builder, NODES } from "./graph.js";
 import { SYSTEM_PROMPT } from "./prompts.js";
 import { GraphAnnotation } from "./state.js";
 
@@ -13,6 +12,12 @@ const thread = {
     systemPrompt: SYSTEM_PROMPT,
   } as Configuration,
 };
+
+const graph = builder.compile({
+  checkpointer: new MemorySaver(),
+  store: new InMemoryStore(),
+  interruptBefore: [NODES.SAVE_USER_ANSWERS],
+});
 
 const stream = await graph.stream(
   {
@@ -28,6 +33,20 @@ const stream = await graph.stream(
 
 for await (const chunk of stream) {
   console.log("\n=== Stream Update ===");
-  console.log(chunk);
+  console.log(JSON.stringify(chunk, null, 2));
   console.log("\n-------------------");
 }
+
+// graph.invoke(
+//   new Command({
+//     goto: NODES.SAVE_USER_ANSWERS,
+//     update: {
+//       messages: [
+//         {
+//           role: "user",
+//           content: "",
+//         },
+//       ],
+//     },
+//   }),
+// );

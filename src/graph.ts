@@ -1,26 +1,29 @@
-// Main graph
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
 import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
 import {
   END,
-  InMemoryStore,
+  interrupt,
   LangGraphRunnableConfig,
   MemorySaver,
   START,
   StateGraph,
 } from "@langchain/langgraph";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
 import { ensureConfiguration } from "./configuration.js";
-import { QUESTION_PROMPT, SUGGESTION_PROMPT } from "./prompts.js";
+import {
+  QUESTION_PROMPT,
+  SUGGESTION_PROMPT,
+  SYSTEM_PROMPT,
+} from "./prompts.js";
 import { GraphAnnotation } from "./state.js";
-import { getStoreFromConfigOrThrow, splitModelAndProvider } from "./utils.js";
-import { z } from "zod";
 import { initializeTools } from "./tools.js";
+import { getStoreFromConfigOrThrow } from "./utils.js";
 
 const llm = new ChatOpenAI({
   modelName: "gpt-4o-mini",
-  temperature: 0.7,
+  temperature: 1,
   apiKey: process.env.OPENAI_API_KEY,
 });
 
@@ -30,6 +33,9 @@ export const NODES = {
   ASK_SPECIFIC_QUESTIONS: "ask_specific_questions",
   SAVE_USER_ANSWERS: "save_user_answers",
   GENERATE_SUGGESTIONS: "generate_suggestions",
+  USER_ANSWER: "user_answer",
+  TOOLS: "tools",
+  GET_USER_FEEDBACK: "get_user_feedback",
 } as const;
 
 export async function checkKnowledge(
@@ -63,7 +69,7 @@ Consider:
 3. Do we know their practical constraints (budget, location, timing)?
 4. Is the information we have relevant to their current request?
 
-Respond with either "SUFFICIENT" or "INSUFFICIENT" followed by a brief explanation.`,
+Respond with either "SUFFICIENT" or "INSUFFICIENT"`,
     },
     {
       role: "user",
@@ -78,125 +84,143 @@ ${formattedMemories}`,
   return { hasEnoughKnowledge: response.startsWith("SUFFICIENT") };
 }
 
-export async function lookSavedMemories(
+export async function askSpecificQuestions(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<{ savedMemories: any[] }> {
+) {
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
   const memories = await store.search(["memories", configurable.userId], {
     limit: 10,
   });
-  return { savedMemories: memories };
-}
 
-export async function askSpecificQuestions(
-  state: typeof GraphAnnotation.State,
-  config: LangGraphRunnableConfig,
-): Promise<{ messages: BaseMessage[] }> {
+  const formattedMemories = memories
+    .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
+    .join("\n");
+
   const result = await llm.invoke([
     {
       role: "system",
-      content: QUESTION_PROMPT,
+      content: QUESTION_PROMPT(formattedMemories),
     },
+    ...state.messages,
   ]);
   return { messages: [result] };
+}
+
+export function userAnswer(
+  state: typeof GraphAnnotation.State,
+  config: LangGraphRunnableConfig,
+) {
+  interrupt({
+    value: "userAnswer",
+  });
+  return { messages: [] };
 }
 
 export async function saveUserAnswers(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
 ): Promise<{ messages: BaseMessage[] }> {
+  const lastMessage = state.messages[state.messages.length - 1];
   const configurable = ensureConfiguration(config);
-
+  if (lastMessage.getType() !== "human") {
+    console.log("Last message is not a human message", lastMessage.getType());
+    throw new Error("Last message is not a human message");
+  }
   const upsertMemoryTool = initializeTools(config);
   const boundLLM = llm.bind({
     tools: upsertMemoryTool,
     tool_choice: "upsertMemory",
   });
 
-  const result = await boundLLM.invoke(
-    [
-      {
-        role: "system",
-        content: `Extract key information from the user's answers and format it for storage`,
-      },
-      ...state.messages,
-    ],
+  const result = await boundLLM.invoke([
     {
-      configurable: splitModelAndProvider(configurable.model),
+      role: "system",
+      content: `Extract key information from the user's answers and format it for storage. Use ${configurable.userId} as memoryId`,
     },
+    lastMessage,
+  ]);
+
+  console.log("result", JSON.stringify(result, null, 2));
+
+  const toolCalls = result.tool_calls;
+
+  if (!toolCalls) {
+    throw new Error("No tool calls found");
+  }
+
+  const savedMemories = await Promise.all(
+    toolCalls.map(async (tc) => {
+      return await upsertMemoryTool[0].invoke(tc.args as any);
+    }),
   );
 
-  return { messages: [result] };
+  return { messages: savedMemories };
 }
+const tools = [
+  new GooglePlacesAPI(),
+  new TavilySearchResults({
+    maxResults: 3,
+  }),
+];
 
 export async function generateSuggestions(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<{ messages: BaseMessage[]; suggestions: string[] }> {
-  const tools = [new GooglePlacesAPI(), new TavilySearchResults()];
+) {
+  const store = getStoreFromConfigOrThrow(config);
+  const configurable = ensureConfiguration(config);
+
   const boundLLM = llm.bind({
     tools,
     tool_choice: "auto",
   });
 
-  const memories = state.savedMemories || [];
+  const memories = await store.search(["memories", configurable.userId], {
+    limit: 10,
+  });
+
   const formattedMemories = memories
     .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
     .join("\n");
 
   const result = await boundLLM.invoke([
-    {
-      role: "system",
-      content: SUGGESTION_PROMPT,
-    },
-    {
-      role: "user",
-      content: `User Information:\n${formattedMemories}\nRequest: ${state.userRequest}`,
-    },
+    new AIMessage({
+      content: SYSTEM_PROMPT,
+    }),
+    new AIMessage({
+      content: SUGGESTION_PROMPT(
+        formattedMemories,
+        state.userRequest as string,
+        new Date().toISOString(),
+      ),
+    }),
+    ...state.messages,
   ]);
 
-  // Extract suggestions from the LLM response
-  const suggestions = (
-    typeof result.content === "string"
-      ? result.content
-      : JSON.stringify(result.content)
-  )
-    .split("\n")
-    .filter((line: string) => line.trim().length > 0)
-    .map((line: string) => line.trim());
-
   return {
-    messages: [result],
-    suggestions,
+    messages: result,
   };
 }
 
 export function routeBasedOnKnowledge(
   state: typeof GraphAnnotation.State,
-): typeof NODES.LOOK_SAVED_MEMORIES | typeof NODES.ASK_SPECIFIC_QUESTIONS {
+): typeof NODES.GENERATE_SUGGESTIONS | typeof NODES.ASK_SPECIFIC_QUESTIONS {
   return state.hasEnoughKnowledge
-    ? NODES.LOOK_SAVED_MEMORIES
+    ? NODES.GENERATE_SUGGESTIONS
     : NODES.ASK_SPECIFIC_QUESTIONS;
-}
-
-export function routeAfterQuestions(
-  state: typeof GraphAnnotation.State,
-): typeof NODES.SAVE_USER_ANSWERS {
-  return NODES.SAVE_USER_ANSWERS;
-}
-
-export function routeAfterSaving(
-  state: typeof GraphAnnotation.State,
-): typeof NODES.CHECK_KNOWLEDGE {
-  return NODES.CHECK_KNOWLEDGE;
 }
 
 export function checkUserSatisfaction(
   state: typeof GraphAnnotation.State,
-): typeof NODES.ASK_SPECIFIC_QUESTIONS | typeof END {
-  return state.userFeedback === "satisfied"
+): typeof NODES.ASK_SPECIFIC_QUESTIONS | typeof END | typeof NODES.TOOLS {
+  const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
+  if (lastMessage.tool_calls?.length) {
+    return NODES.TOOLS;
+  }
+
+  return state.userFeedback?.toLowerCase() === "satisfied"
     ? END
     : NODES.ASK_SPECIFIC_QUESTIONS;
 }
@@ -205,31 +229,29 @@ export const builder = new StateGraph({
   stateSchema: GraphAnnotation,
 })
   .addNode(NODES.CHECK_KNOWLEDGE, checkKnowledge)
-  .addNode(NODES.LOOK_SAVED_MEMORIES, lookSavedMemories)
   .addNode(NODES.ASK_SPECIFIC_QUESTIONS, askSpecificQuestions)
+  .addNode(NODES.USER_ANSWER, userAnswer)
   .addNode(NODES.SAVE_USER_ANSWERS, saveUserAnswers)
+  .addNode(NODES.TOOLS, new ToolNode(tools))
   .addNode(NODES.GENERATE_SUGGESTIONS, generateSuggestions)
   .addEdge(START, NODES.CHECK_KNOWLEDGE)
+  .addEdge(NODES.ASK_SPECIFIC_QUESTIONS, NODES.USER_ANSWER)
+  .addEdge(NODES.USER_ANSWER, NODES.SAVE_USER_ANSWERS)
+  .addEdge(NODES.SAVE_USER_ANSWERS, NODES.CHECK_KNOWLEDGE)
+  .addEdge(NODES.TOOLS, NODES.GENERATE_SUGGESTIONS)
   .addConditionalEdges(NODES.CHECK_KNOWLEDGE, routeBasedOnKnowledge, {
-    [NODES.LOOK_SAVED_MEMORIES]: NODES.LOOK_SAVED_MEMORIES,
+    [NODES.GENERATE_SUGGESTIONS]: NODES.GENERATE_SUGGESTIONS,
     [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
-  })
-  .addEdge(NODES.LOOK_SAVED_MEMORIES, NODES.GENERATE_SUGGESTIONS)
-  // New flow for handling questions and answers
-  .addConditionalEdges(NODES.ASK_SPECIFIC_QUESTIONS, routeAfterQuestions, {
-    [NODES.SAVE_USER_ANSWERS]: NODES.SAVE_USER_ANSWERS,
-  })
-  .addConditionalEdges(NODES.SAVE_USER_ANSWERS, routeAfterSaving, {
-    [NODES.CHECK_KNOWLEDGE]: NODES.CHECK_KNOWLEDGE,
   })
   .addConditionalEdges(NODES.GENERATE_SUGGESTIONS, checkUserSatisfaction, {
     [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
     [END]: END,
+    [NODES.TOOLS]: NODES.TOOLS,
   });
 
 export const graph = builder.compile({
+  interruptAfter: [NODES.GENERATE_SUGGESTIONS],
   checkpointer: new MemorySaver(),
-  interruptBefore: [NODES.SAVE_USER_ANSWERS],
 });
 
 graph.name = "concierge_agent";
