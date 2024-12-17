@@ -1,6 +1,8 @@
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
 import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
-import { AIMessage, BaseMessage, ToolMessage } from "@langchain/core/messages";
+import { InMemoryCache } from "@langchain/core/caches";
+import { AIMessage } from "@langchain/core/messages";
+
 import {
   END,
   interrupt,
@@ -9,22 +11,26 @@ import {
   START,
   StateGraph,
 } from "@langchain/langgraph";
+
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { ChatOpenAI } from "@langchain/openai";
 import { ensureConfiguration } from "./configuration.js";
 import {
+  CHECK_FOR_KNOWLEDGE_PROMPT,
   QUESTION_PROMPT,
   SUGGESTION_PROMPT,
-  SYSTEM_PROMPT,
 } from "./prompts.js";
 import { GraphAnnotation } from "./state.js";
 import { initializeTools } from "./tools.js";
 import { getStoreFromConfigOrThrow } from "./utils.js";
+import { z } from "zod";
 
 const llm = new ChatOpenAI({
   modelName: "gpt-4o-mini",
-  temperature: 1,
+  temperature: 0.5,
   apiKey: process.env.OPENAI_API_KEY,
+  maxTokens: 1000,
+  cache: new InMemoryCache(),
 });
 
 export const NODES = {
@@ -36,52 +42,45 @@ export const NODES = {
   USER_ANSWER: "user_answer",
   TOOLS: "tools",
   GET_USER_FEEDBACK: "get_user_feedback",
+  BEFORE_STATE_CHECK: "before_state_check",
 } as const;
 
 export async function checkKnowledge(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<{ hasEnoughKnowledge: boolean }> {
+) {
+  if (state.userRequest.length < 5) {
+    throw new Error("User request is too short");
+  }
+
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
-  const memories = await store.search(["memories", configurable.userId], {
-    limit: 10,
-  });
+  const memory = await store.get(
+    ["memories", configurable.userId],
+    configurable.userId,
+  );
 
   // If we have no memories, we definitely need more information
-  if (memories.length === 0) {
+  if (!memory) {
     return { hasEnoughKnowledge: false };
   }
 
-  const formattedMemories = memories
-    .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
-    .join("\n");
+  const schema = z.object({
+    hasEnoughKnowledge: z.boolean(),
+  }) as any;
 
-  const result = await llm.invoke([
+  const result = await llm.withStructuredOutput(schema).invoke([
     {
       role: "system",
-      content: `You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
-Based on their request and the information we have, determine if we need to ask more questions.
-
-Consider:
-1. Do we know their basic preferences (indoor/outdoor, social/solo, etc.)?
-2. Do we know their interests (arts, sports, food, etc.)?
-3. Do we know their practical constraints (budget, location, timing)?
-4. Is the information we have relevant to their current request?
-
-Respond with either "SUFFICIENT" or "INSUFFICIENT"`,
+      content: CHECK_FOR_KNOWLEDGE_PROMPT,
     },
     {
       role: "user",
-      content: `User's Request: ${state.userRequest}
-
-Known Information:
-${formattedMemories}`,
+      content: `User's Request: ${state.userRequest} <memories>${JSON.stringify(memory.value)}</memories>`,
     },
   ]);
 
-  const response = result.content.toString().toUpperCase();
-  return { hasEnoughKnowledge: response.startsWith("SUFFICIENT") };
+  return { hasEnoughKnowledge: result.hasEnoughKnowledge };
 }
 
 export async function askSpecificQuestions(
@@ -90,20 +89,22 @@ export async function askSpecificQuestions(
 ) {
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
-  const memories = await store.search(["memories", configurable.userId], {
-    limit: 10,
-  });
+  const memory = await store.get(
+    ["memories", configurable.userId],
+    configurable.userId,
+  );
+  const memories = memory ? [memory] : [];
 
   const formattedMemories = memories
     .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
     .join("\n");
 
   const result = await llm.invoke([
+    ...state.messages,
     {
       role: "system",
       content: QUESTION_PROMPT(formattedMemories),
     },
-    ...state.messages,
   ]);
   return { messages: [result] };
 }
@@ -121,9 +122,9 @@ export function userAnswer(
 export async function saveUserAnswers(
   state: typeof GraphAnnotation.State,
   config: LangGraphRunnableConfig,
-): Promise<{ messages: BaseMessage[] }> {
+) {
   const lastMessage = state.messages[state.messages.length - 1];
-  const configurable = ensureConfiguration(config);
+
   if (lastMessage.getType() !== "human") {
     console.log("Last message is not a human message", lastMessage.getType());
     throw new Error("Last message is not a human message");
@@ -134,29 +135,18 @@ export async function saveUserAnswers(
     tool_choice: "upsertMemory",
   });
 
-  const result = await boundLLM.invoke([
-    {
-      role: "system",
-      content: `Extract key information from the user's answers and format it for storage. Use ${configurable.userId} as memoryId`,
-    },
-    lastMessage,
-  ]);
-
-  console.log("result", JSON.stringify(result, null, 2));
-
+  const result = await boundLLM.invoke(state.messages);
   const toolCalls = result.tool_calls;
 
   if (!toolCalls) {
     throw new Error("No tool calls found");
   }
 
-  const savedMemories = await Promise.all(
+  await Promise.all(
     toolCalls.map(async (tc) => {
       return await upsertMemoryTool[0].invoke(tc.args as any);
     }),
   );
-
-  return { messages: savedMemories };
 }
 const tools = [
   new GooglePlacesAPI(),
@@ -177,18 +167,67 @@ export async function generateSuggestions(
     tool_choice: "auto",
   });
 
-  const memories = await store.search(["memories", configurable.userId], {
-    limit: 10,
-  });
+  const memory = await store.get(
+    ["memories", configurable.userId],
+    configurable.userId,
+  );
+  const memories = memory ? [memory] : [];
 
   const formattedMemories = memories
     .map((mem) => `[${mem.key}]: ${JSON.stringify(mem.value)}`)
     .join("\n");
 
+  const lastMessage = state.messages[state.messages.length - 1];
+
+  if (lastMessage.getType() === "tool") {
+    // FIXME: Zod is not working here, so we need to use a different approach
+    const llmWithStructuredOutput = await llm.withStructuredOutput({
+      name: "suggestions",
+      description: "List of personalized activity suggestions for user",
+      parameters: {
+        type: "object",
+        properties: {
+          suggestions: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: {
+                  type: "string",
+                  description: "Title of the suggested activity",
+                },
+                description: {
+                  type: "string",
+                  description: "Detailed description of the activity",
+                },
+                location: {
+                  type: "string",
+                  description: "Location where the activity takes place",
+                },
+                url: {
+                  type: "string",
+                  description: "URL with more information about the activity",
+                },
+                time: {
+                  type: "string",
+                  description: "Suggested time for the activity",
+                },
+              },
+              required: ["title", "description", "location", "url", "time"],
+            },
+          },
+        },
+        required: ["suggestions"],
+      },
+    });
+
+    const suggestions = await llmWithStructuredOutput.invoke(state.messages);
+
+    return { suggestions };
+  }
+
   const result = await boundLLM.invoke([
-    new AIMessage({
-      content: SYSTEM_PROMPT,
-    }),
+    state.messages[0],
     new AIMessage({
       content: SUGGESTION_PROMPT(
         formattedMemories,
@@ -196,7 +235,6 @@ export async function generateSuggestions(
         new Date().toISOString(),
       ),
     }),
-    ...state.messages,
   ]);
 
   return {
@@ -212,17 +250,20 @@ export function routeBasedOnKnowledge(
     : NODES.ASK_SPECIFIC_QUESTIONS;
 }
 
-export function checkUserSatisfaction(
-  state: typeof GraphAnnotation.State,
-): typeof NODES.ASK_SPECIFIC_QUESTIONS | typeof END | typeof NODES.TOOLS {
+export function checkUserSatisfaction(state: typeof GraphAnnotation.State) {
   const lastMessage = state.messages[state.messages.length - 1] as AIMessage;
   if (lastMessage.tool_calls?.length) {
     return NODES.TOOLS;
   }
 
-  return state.userFeedback?.toLowerCase() === "satisfied"
-    ? END
-    : NODES.ASK_SPECIFIC_QUESTIONS;
+  return NODES.BEFORE_STATE_CHECK;
+}
+
+function beforeENDStateCheck() {
+  interrupt({
+    value: "beforeStateCheck",
+  });
+  return { messages: [] };
 }
 
 export const builder = new StateGraph({
@@ -234,7 +275,9 @@ export const builder = new StateGraph({
   .addNode(NODES.SAVE_USER_ANSWERS, saveUserAnswers)
   .addNode(NODES.TOOLS, new ToolNode(tools))
   .addNode(NODES.GENERATE_SUGGESTIONS, generateSuggestions)
+  .addNode(NODES.BEFORE_STATE_CHECK, beforeENDStateCheck)
   .addEdge(START, NODES.CHECK_KNOWLEDGE)
+  .addEdge(NODES.BEFORE_STATE_CHECK, END)
   .addEdge(NODES.ASK_SPECIFIC_QUESTIONS, NODES.USER_ANSWER)
   .addEdge(NODES.USER_ANSWER, NODES.SAVE_USER_ANSWERS)
   .addEdge(NODES.SAVE_USER_ANSWERS, NODES.CHECK_KNOWLEDGE)
@@ -244,13 +287,11 @@ export const builder = new StateGraph({
     [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
   })
   .addConditionalEdges(NODES.GENERATE_SUGGESTIONS, checkUserSatisfaction, {
-    [NODES.ASK_SPECIFIC_QUESTIONS]: NODES.ASK_SPECIFIC_QUESTIONS,
-    [END]: END,
+    [NODES.BEFORE_STATE_CHECK]: NODES.BEFORE_STATE_CHECK,
     [NODES.TOOLS]: NODES.TOOLS,
   });
 
 export const graph = builder.compile({
-  interruptAfter: [NODES.GENERATE_SUGGESTIONS],
   checkpointer: new MemorySaver(),
 });
 

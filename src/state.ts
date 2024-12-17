@@ -2,11 +2,17 @@ import { BaseMessage, SystemMessage } from "@langchain/core/messages";
 import { Annotation, messagesStateReducer } from "@langchain/langgraph";
 import { SYSTEM_PROMPT } from "./prompts.js";
 
-/**
- * Main graph state.
- */
+export interface Suggestion {
+  title: string;
+  description: string;
+  location: string;
+  url: string;
+  time: string;
+}
+
 export const GraphAnnotation = Annotation.Root({
   userFeedback: Annotation<string | undefined>(),
+  suggestions: Annotation<Suggestion[] | undefined>(),
   messages: Annotation<BaseMessage[]>({
     reducer: messagesStateReducer,
     default: () => [
