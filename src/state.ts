@@ -26,4 +26,5 @@ export const GraphAnnotation = Annotation.Root({
     default: () => false,
   }),
   userRequest: Annotation<string>(),
+  feedback: Annotation<string | undefined>(),
 });

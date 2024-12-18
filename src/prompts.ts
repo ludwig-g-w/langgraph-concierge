@@ -1,3 +1,5 @@
+import { Suggestion } from "./state.js";
+
 export const SYSTEM_PROMPT = `You are a helpful concierge assistant that helps users find interesting events and places based on their preferences and interests. Your goal is to provide personalized suggestions that match the user's tastes and requirements.`;
 export const CHECK_FOR_KNOWLEDGE_PROMPT = `You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
 Based on their request and the information we have, determine if we need to ask more questions.
@@ -10,11 +12,14 @@ Consider:
 5. Do we know their demographics (age range, group size)?
 6. Is the information we have relevant to their current request?
 
+Remember to only consider the preferences that are relevant to the user's request.
+IMPORTANT: You do not need to be sure about 100% of the preferences, just 50% or more.
+
 Respond with either true or false`;
 
 export const QUESTION_PROMPT = (
   memories: string,
-) => `Based on the current conversation and any saved memories <memories>${memories}</memories>, ask ONE question to better understand the user's preferences for events and places.
+) => `Based on the current conversation and any saved preferences <preferences>${memories}</preferences>, ask 3 question to better understand the user's preferences for events and places.
 
 Choose a question from one of these categories that hasn't been answered in the memories:
 
@@ -42,9 +47,11 @@ Requirements:
 `;
 
 export const SUGGESTION_PROMPT = (
-  memories: string,
+  preferences: string,
   userRequest: string,
   timestamp: string,
+  feedback: string | undefined,
+  suggestions: Suggestion[] | undefined,
 ) => `Based on the user's preferences and request, use the available tools to find and suggest relevant events or places. For each suggestion:
 
 1. Explain why it matches their preferences
@@ -53,7 +60,14 @@ export const SUGGESTION_PROMPT = (
 
 Make sure to provide a diverse set of options while staying within their stated preferences and constraints.
 
-<memories>${memories}</memories>
+If there is feedback, use it to improve the suggestions.
+Make sure to modify the suggestions to better fit the feedback.
+Take into account the previous suggestions and adjust them accordingly.
+
+<preferences>${preferences}</preferences>
 <user_request>${userRequest}</user_request>
 <timestamp>${timestamp}</timestamp>
+<feedback>${feedback}</feedback>
+<previous_suggestions>${JSON.stringify(suggestions) || "No previous suggestions"}</previous_suggestions>
+
 `;
