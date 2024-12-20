@@ -125,7 +125,7 @@ export function userAnswer(
     answer = interrupt(question);
 
     // Validate answer, if the answer isn't valid ask for input again.
-    if (typeof answer !== "string" || answer.length < 1) {
+    if (typeof answer !== "string" || !answer.length) {
       question = `'${answer}' is not a valid answer to ${question}`;
       continue;
     } else {
@@ -166,13 +166,21 @@ export async function saveUserAnswers(
     throw new Error("No tool calls found");
   }
 
-  await Promise.all(
+  const results = await Promise.all(
     toolCalls.map(async (tc) => {
       return await upsertMemoryTool[0].invoke(tc.args as any);
     }),
   );
 
-  return { messages: [] };
+  console.log(results);
+
+  return {
+    messages: [
+      new AIMessage({
+        content: `User answers saved to memory ${results.map((r) => r).join(", ")}`,
+      }),
+    ],
+  };
 }
 
 const tools = [

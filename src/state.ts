@@ -11,7 +11,6 @@ export interface Suggestion {
 }
 
 export const GraphAnnotation = Annotation.Root({
-  userFeedback: Annotation<string | undefined>(),
   suggestions: Annotation<Suggestion[] | undefined>(),
   messages: Annotation<BaseMessage[]>({
     reducer: messagesStateReducer,

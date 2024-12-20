@@ -18,16 +18,10 @@ IMPORTANT: You do not need to be sure about 100% of the preferences, just 50% or
 Respond with either true or false`;
 
 export const QUESTION_PROMPT = (
-  memories: string,
-) => `Based on the current conversation and any saved preferences <preferences>${memories}</preferences>, ask 3 question to better understand the user's preferences for events and places.
+  preferences: string,
+) => `Based on the current conversation and any saved preferences, ask 3 questions to better understand the user's preferences for events and places.
 
-Choose a question from one of these categories that hasn't been answered in the memories:
-
-1. Activity preferences (indoor/outdoor, social/solo, active/relaxed)
-2. Food preferences (cuisine types, dining style, price range)
-3. Interests and hobbies (arts, sports, entertainment, learning)
-4. Practical constraints (budget, transportation, schedule)
-5. Demographics (age range, group size)
+Choose a questions from the following categories that hasn't been answered in the <preferences>${preferences}</preferences>
 
 Format your questions exactly like this example:
 "Please choose your preferred dining style:
@@ -43,7 +37,7 @@ Requirements:
 - User should be able to respond with just the number
 - Ask only ONE question at a time
 - Do not make any suggestions or recommendations
-- Do not ask about topics already covered in the memories
+- Do not ask about topics already covered in the <preferences>
 `;
 
 export const SUGGESTION_PROMPT = (
