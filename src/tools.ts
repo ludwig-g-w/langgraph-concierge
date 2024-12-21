@@ -16,19 +16,11 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
    */
   async function upsertMemory(opts: {
     preferences: {
-      activityType?: string;
-      socialStyle?: string;
-      activityLevel?: string;
-      cuisineTypes?: string[];
-      diningStyle?: string;
-      priceRange?: string;
-      interests?: string[];
-      budget?: string;
-      transportation?: string;
-      schedule?: string;
-      location?: string;
-      ageRange?: string;
-      groupSize?: string;
+      activityLevel?: string | null;
+      cuisineTypes?: string[] | null;
+      interests?: string[] | null;
+      budget?: string | null;
+      location?: string | null;
     };
   }): Promise<string> {
     const { preferences } = opts;
@@ -61,46 +53,34 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
       "Update the user's stored preferences. New preferences will be merged with existing ones.",
     schema: z.object({
       preferences: z.object({
-        // Activity preferences
-        activityType: z.string().optional().describe("Indoor/Outdoor/Both"),
-        socialStyle: z.string().optional().describe("Solo/Group/Both"),
-        activityLevel: z
-          .string()
-          .optional()
-          .describe("Active/Relaxed/Moderate"),
-
-        // Food preferences
         cuisineTypes: z
           .array(z.string())
           .optional()
-          .describe("Preferred cuisine types"),
-        diningStyle: z
-          .string()
-          .optional()
-          .describe("Fine dining/Casual/Quick service/Street food"),
-        priceRange: z.string().optional().describe("Budget/Moderate/Expensive"),
+          .describe(
+            "Preferred cuisine types example: Italian, Chinese, Japanese, etc",
+          )
+          .nullable()
+          .optional(),
 
-        // Interests and hobbies
         interests: z
           .array(z.string())
           .optional()
-          .describe("Arts/Sports/Entertainment/Learning"),
+          .describe("Arts/Sports/Entertainment/Learning/etc")
+          .nullable()
+          .optional(),
 
-        // Practical constraints
-        budget: z.string().optional().describe("Overall budget constraints"),
-        transportation: z
+        budget: z
           .string()
           .optional()
-          .describe("Car/Public transit/Walking"),
-        schedule: z.string().optional().describe("Available times/days"),
-        location: z.string().optional().describe("Preferred location/area"),
-
-        // Demographics
-        ageRange: z.string().optional().describe("Age range category"),
-        groupSize: z
+          .describe("low/medium/high")
+          .nullable()
+          .optional(),
+        location: z
           .string()
           .optional()
-          .describe("Number of people in group (small/medium/large)"),
+          .describe("the address of the user")
+          .nullable()
+          .optional(),
       }),
     }),
   });

@@ -81,11 +81,10 @@ export async function checkKnowledge(
   const result = await llm.withStructuredOutput(schema).invoke([
     {
       role: "system",
-      content: CHECK_FOR_KNOWLEDGE_PROMPT,
-    },
-    {
-      role: "user",
-      content: `User's Request: ${state.userRequest} <preferences>${JSON.stringify(memory.value)}</preferences>`,
+      content: CHECK_FOR_KNOWLEDGE_PROMPT(
+        JSON.stringify(memory.value),
+        state.userRequest,
+      ),
     },
   ]);
 
@@ -107,7 +106,10 @@ export async function askSpecificQuestions(
     ...state.messages,
     {
       role: "system",
-      content: QUESTION_PROMPT(JSON.stringify(memory?.value)),
+      content: QUESTION_PROMPT(
+        JSON.stringify(memory?.value),
+        state.hasEnoughKnowledge.reason,
+      ),
     },
   ]);
   return { messages: result };
@@ -171,8 +173,6 @@ export async function saveUserAnswers(
       return await upsertMemoryTool[0].invoke(tc.args as any);
     }),
   );
-
-  console.log(results);
 
   return {
     messages: [

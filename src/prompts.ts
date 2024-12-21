@@ -1,29 +1,30 @@
 import { Suggestion } from "./state.js";
 
 export const SYSTEM_PROMPT = `You are a helpful concierge assistant that helps users find interesting events and places based on their preferences and interests. Your goal is to provide personalized suggestions that match the user's tastes and requirements.`;
-export const CHECK_FOR_KNOWLEDGE_PROMPT = `You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
-Based on their request and the information we have, determine if we need to ask more questions.
+export const CHECK_FOR_KNOWLEDGE_PROMPT = (
+  preferences: string,
+  userRequest: string,
+) => `
+You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
+Based on their request and the information already have saved the preferences we have, determine if we need to ask more questions.
 
-Consider:
-1. Do we know their activity preferences (activity type, social style, activity level)?
-2. Do we know their food preferences (cuisine types, dining style, price range)?
-3. Do we know their interests and hobbies (arts, sports, entertainment, learning)?
-4. Do we know their practical constraints (budget, transportation, schedule, location)?
-5. Do we know their demographics (age range, group size)?
-6. Is the information we have relevant to their current request?
+* IMPORTANT: You do not need to be certain about 100% of the preferences, just 50% or more.
+* Remember to only consider the preferences that are relevant to the user's request.
+* Most important is to know where the user is and what time it is.
 
-Remember to only consider the preferences that are relevant to the user's request.
-IMPORTANT: You do not need to be sure about 100% of the preferences, just 50% or more.
 
-Respond with either true or false`;
+<user_request>${userRequest}</user_request>
+<preferences>${preferences}</preferences>
+`;
 
 export const QUESTION_PROMPT = (
   preferences: string,
-) => `Based on the current conversation and any saved preferences, ask 3 questions to better understand the user's preferences for events and places.
+  reason: string,
+) => `Based on the the <reason> why we don't have enough knowledge and any saved <preferences>, ask questions to better understand the user's preferences for events and places.
 
-Choose a questions from the following categories that hasn't been answered in the <preferences>${preferences}</preferences>
+Choose up to 3 questions from the following categories that hasn't been answered in the <preferences>
 
-Format your questions exactly like this example:
+Format each question exactly like this example:
 "Please choose your preferred dining style:
 1. Fine dining restaurants
 2. Casual sit-down restaurants 
@@ -31,13 +32,18 @@ Format your questions exactly like this example:
 4. Street food and food trucks
 5. Home cooking and meal prep"
 
+1 exemption to the formatting is the question of location, which should be formatted like this:
+"Where are you located?"
+
 Requirements:
 - Present 3-5 clear options for the user to choose from
 - Number each option sequentially starting at 1
 - User should be able to respond with just the number
-- Ask only ONE question at a time
-- Do not make any suggestions or recommendations
+- Do not make any suggestions or recommendations already at this stage
 - Do not ask about topics already covered in the <preferences>
+
+<reason>${reason}</reason>
+<preferences>${preferences}</preferences>
 `;
 
 export const SUGGESTION_PROMPT = (

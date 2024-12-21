@@ -20,10 +20,10 @@ export const GraphAnnotation = Annotation.Root({
       }),
     ],
   }),
-  hasEnoughKnowledge: Annotation<boolean>({
-    value: (x: boolean, y: boolean) => y,
-    default: () => false,
-  }),
+  hasEnoughKnowledge: Annotation<{
+    hasEnoughKnowledge: boolean;
+    reason: string;
+  }>(),
   userRequest: Annotation<string>(),
   feedback: Annotation<string | undefined>(),
 });
