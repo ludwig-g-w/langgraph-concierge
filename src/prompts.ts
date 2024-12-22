@@ -52,17 +52,17 @@ export const SUGGESTION_PROMPT = (
   timestamp: string,
   feedback: string | undefined,
   suggestions: Suggestion[] | undefined,
-) => `Based on the user's preferences and request, use the available tools to find and suggest relevant events or places. For each suggestion:
+) => `Based on the data provided, use the available tools to find and suggest relevant events or places. For each suggestion:
 
-1. Explain why it matches their preferences
+1. Explain why it matches well
 2. Include practical details (location, timing, cost if available)
 3. Provide a brief description of what to expect
 
 Make sure to provide a diverse set of options while staying within their stated preferences and constraints.
 
-If there is feedback, use it to improve the suggestions.
-Make sure to modify the suggestions to better fit the feedback.
-Take into account the previous suggestions and adjust them accordingly.
+* IMPORTANT: Only provide 3 suggestions which you deem are the best fit for the user.
+* If there is <feedback>, use it to improve the suggestions.
+* Take into account the previous suggestions and adjust them accordingly.
 
 <preferences>${preferences}</preferences>
 <user_request>${userRequest}</user_request>
