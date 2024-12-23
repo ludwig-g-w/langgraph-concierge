@@ -1,9 +1,9 @@
 {
-  "name": "memory-agent",
+  "name": "langgraph-concierge",
   "version": "0.0.1",
-  "description": "A ReAct-style agent with a tool to store memories.",
+  "description": "A sophisticated TypeScript implementation of a ReAct-style conversational agent with persistent memory capabilities. Built using LangGraph and LangChain.js, this agent can remember and learn from conversations across multiple sessions, making it ideal for building personalized, context-aware chatbots.",
   "main": "src/chatbot/index.ts",
-  "author": "Brace Sproul",
+  "author": "Ludwigsw",
   "license": "MIT",
   "private": true,
   "type": "module",

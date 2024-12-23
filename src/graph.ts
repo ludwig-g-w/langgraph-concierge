@@ -1,11 +1,7 @@
 import { GooglePlacesAPI } from "@langchain/community/tools/google_places";
 import { TavilySearchResults } from "@langchain/community/tools/tavily_search";
 import { InMemoryCache } from "@langchain/core/caches";
-import {
-  AIMessage,
-  HumanMessage,
-  SystemMessage,
-} from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 
 import {
   Command,
@@ -30,8 +26,8 @@ import {
   SUGGESTION_PROMPT,
 } from "./prompts.js";
 import { GraphAnnotation } from "./state.js";
-import { initializeTools } from "./tools.js";
 import { getStoreFromConfigOrThrow } from "./utils.js";
+import { updateUserMemory } from "./utils.js";
 
 const llm = new ChatOpenAI({
   modelName: "gpt-4o-mini",
@@ -63,6 +59,7 @@ export async function checkKnowledge(
 
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
+  await updateUserMemory(llm, [new HumanMessage(state.userRequest)], config);
   const memory = await store.get(
     ["memories", configurable.userId],
     configurable.userId,
@@ -149,30 +146,7 @@ export async function saveUserAnswers(
 ) {
   const lastTwoMessages = state.messages.slice(-2);
 
-  const upsertMemoryTool = initializeTools(config);
-  const boundLLM = llm.bind({
-    tools: upsertMemoryTool,
-    tool_choice: "upsertMemory",
-  });
-
-  const result = await boundLLM.invoke([
-    new SystemMessage({
-      content:
-        "Save the user's answers to memory. Only update the preferences that are relevant to response from the user. Leave the preferences unchanged if they have not been answered.",
-    }),
-    ...lastTwoMessages,
-  ]);
-  const toolCalls = result.tool_calls;
-
-  if (!toolCalls) {
-    throw new Error("No tool calls found");
-  }
-
-  const results = await Promise.all(
-    toolCalls.map(async (tc) => {
-      return await upsertMemoryTool[0].invoke(tc.args as any);
-    }),
-  );
+  const results = await updateUserMemory(llm, lastTwoMessages, config);
 
   return {
     messages: [
@@ -233,8 +207,7 @@ export async function generateSuggestions(
       ),
     }) as any;
 
-    const llmWithStructuredOutput =
-      await llm.withStructuredOutput(suggestionSchema);
+    const llmWithStructuredOutput = llm.withStructuredOutput(suggestionSchema);
 
     const suggestions = await llmWithStructuredOutput.invoke(state.messages);
 

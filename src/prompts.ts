@@ -22,7 +22,7 @@ export const QUESTION_PROMPT = (
   reason: string,
 ) => `Based on the the <reason> why we don't have enough knowledge and any saved <preferences>, ask questions to better understand the user's preferences for events and places.
 
-Choose up to 3 questions from the following categories that hasn't been answered in the <preferences>
+Choose 1 - 3 questions which will satisfy whatever is missing from the <preferences>
 
 Format each question exactly like this example:
 "Please choose your preferred dining style:
@@ -32,7 +32,7 @@ Format each question exactly like this example:
 4. Street food and food trucks
 5. Home cooking and meal prep"
 
-1 exemption to the formatting is the question of location, which should be formatted like this:
+ONE EXEMPTION to the formatting is the question of location, which should be an open question formatted like this(only ask if you don't have the location already):
 "Where are you located?"
 
 Requirements:
@@ -71,3 +71,5 @@ Make sure to provide a diverse set of options while staying within their stated 
 <previous_suggestions>${JSON.stringify(suggestions) || "No previous suggestions"}</previous_suggestions>
 
 `;
+
+export const UPDATE_USER_MEMORY_PROMPT = `Save the user's answers to memory. Only update the preferences that are relevant to response from the user. Leave the preferences unchanged if they have not been answered.`;
