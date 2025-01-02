@@ -51,7 +51,6 @@ export async function answerQuestion(answer: string) {
       ...thread,
       store: new InMemoryStore(),
       streamMode: "values",
-      debug: true,
     },
   );
 

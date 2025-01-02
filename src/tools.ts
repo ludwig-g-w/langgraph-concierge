@@ -41,6 +41,14 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
       preferences: {
         ...(existingMemory?.value?.preferences || {}),
         ...preferences,
+        cuisineTypes: [
+          ...(existingMemory?.value?.preferences?.cuisineTypes || []),
+          ...(preferences.cuisineTypes || []),
+        ],
+        interests: [
+          ...(existingMemory?.value?.preferences?.interests || []),
+          ...(preferences.interests || []),
+        ],
       },
     });
 
@@ -50,7 +58,7 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
   const upsertMemoryTool = tool(upsertMemory, {
     name: "upsertMemory",
     description:
-      "Update the user's stored preferences. New preferences will be merged with existing ones.",
+      "Update the user's stored preferences. New preferences will be merged with existing ones. Never remove existing preferences.",
     schema: z.object({
       preferences: z.object({
         cuisineTypes: z

@@ -33,7 +33,7 @@ const llm = new ChatOpenAI({
   modelName: "gpt-4o-mini",
   temperature: 0.5,
   apiKey: process.env.OPENAI_API_KEY,
-  maxTokens: 1000,
+  maxTokens: 2000,
   cache: new InMemoryCache(),
 });
 
@@ -132,8 +132,6 @@ export function userAnswer(
       break;
     }
   }
-
-  console.log(`The human in the loop is ${answer} years old.`);
 
   return {
     messages: [new HumanMessage(answer)],
