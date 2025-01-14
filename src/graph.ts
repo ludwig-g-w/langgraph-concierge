@@ -6,6 +6,7 @@ import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import {
   Command,
   END,
+  InMemoryStore,
   interrupt,
   LangGraphRunnableConfig,
   MemorySaver,
@@ -261,12 +262,7 @@ function checkForFeedBack() {
   });
 }
 
-export const builder = new StateGraph(
-  {
-    stateSchema: GraphAnnotation,
-  },
-  ConfigurationAnnotation,
-)
+export const builder = new StateGraph(GraphAnnotation, ConfigurationAnnotation)
   .addNode(NODES.CHECK_KNOWLEDGE, checkKnowledge)
   .addNode(NODES.ASK_SPECIFIC_QUESTIONS, askSpecificQuestions)
   .addNode(NODES.USER_ANSWER, userAnswer)
@@ -291,6 +287,7 @@ export const builder = new StateGraph(
 
 export const graph = builder.compile({
   checkpointer: new MemorySaver(),
+  store: new InMemoryStore(),
 });
 
 graph.name = "concierge_agent";

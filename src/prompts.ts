@@ -8,9 +8,10 @@ export const CHECK_FOR_KNOWLEDGE_PROMPT = (
 You are an analyzer determining if we have enough information about a user to provide personalized suggestions.
 Based on their request and the information already have saved the preferences we have, determine if we need to ask more questions.
 
-* IMPORTANT: You do not need to be certain about 100% of the preferences, just 50% or more.
+* IMPORTANT: As long as we know the user's location and time range, we can provide suggestions.
 * Remember to only consider the preferences that are relevant to the user's request.
-* Most important is to know where the user is and what time it is.
+* the <user_request> is what needs to be answered.
+* the <preferences> is what we have already saved about the user which may be relevant to the user's request.
 
 
 <user_request>${userRequest}</user_request>
@@ -22,7 +23,7 @@ export const QUESTION_PROMPT = (
   reason: string,
 ) => `Based on the the <reason> why we don't have enough knowledge and any saved <preferences>, ask questions to better understand the user's preferences for events and places.
 
-Choose 1 - 3 questions which will satisfy whatever is missing from the <preferences>
+Choose 1 - 5 questions which will satisfy whatever is missing from the <preferences>
 
 Format each question exactly like this example:
 "Please choose your preferred dining style:
@@ -72,4 +73,10 @@ Make sure to provide a diverse set of options while staying within their stated 
 
 `;
 
-export const UPDATE_USER_MEMORY_PROMPT = `Save the user's answers to memory. Only update the preferences that are relevant to response from the user. Leave the preferences unchanged if they have not been answered.`;
+export const UPDATE_USER_MEMORY_PROMPT = `
+Save the user's answers to memory. Only update the preferences that are relevant to response from the user. 
+Leave the preferences unchanged if they have not been answered.
+
+IMPORTANT: Note that we merge two json objects into one, so we don't want to overwrite the existing preferences with the new ones.
+
+`;

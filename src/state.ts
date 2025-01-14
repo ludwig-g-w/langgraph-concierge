@@ -12,7 +12,7 @@ export interface Suggestion {
 
 export const GraphAnnotation = Annotation.Root({
   suggestions: Annotation<Suggestion[] | undefined>(),
-  messages: Annotation<BaseMessage[]>({
+  messages: Annotation<any[]>({
     reducer: messagesStateReducer,
     default: () => [
       new SystemMessage({
