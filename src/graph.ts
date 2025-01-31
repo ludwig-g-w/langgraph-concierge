@@ -29,14 +29,23 @@ import {
 import { GraphAnnotation } from "./state.js";
 import { getStoreFromConfigOrThrow } from "./utils.js";
 import { updateUserMemory } from "./utils.js";
+import { ChatDeepSeek } from "@langchain/deepseek";
 
-const llm = new ChatOpenAI({
-  modelName: "gpt-4o-mini",
+const llm = new ChatDeepSeek({
+  model: "deepseek-chat",
+  apiKey: process.env.DEEPSEEK_API_KEY,
   temperature: 0.5,
-  apiKey: process.env.OPENAI_API_KEY,
   maxTokens: 2000,
   cache: new InMemoryCache(),
 });
+
+// const llm = new ChatOpenAI({
+//   modelName: "gpt-4o-mini",
+//   temperature: 0.5,
+//   apiKey: process.env.OPENAI_API_KEY,
+//   maxTokens: 2000,
+//   cache: new InMemoryCache(),
+// });
 
 export const NODES = {
   CHECK_KNOWLEDGE: "check_knowledge",
@@ -113,10 +122,7 @@ export async function askSpecificQuestions(
   return { messages: result };
 }
 
-export function userAnswer(
-  state: typeof GraphAnnotation.State,
-  config: LangGraphRunnableConfig,
-) {
+export function userAnswer() {
   let question =
     "Answer by specifying the question number and then your answer";
 

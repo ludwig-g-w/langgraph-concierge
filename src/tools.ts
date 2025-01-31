@@ -4,25 +4,20 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getStoreFromConfigOrThrow } from "./utils.js";
 
-/**
- * Initialize tools within a function so that they have access to the current
- * state and config at runtime.
- */
-export function initializeTools(config?: LangGraphRunnableConfig) {
-  /**
-   * Upsert a memory in the database.
-   * @param preferences The user preferences to store
-   * @returns A string confirming the memory storage.
-   */
-  async function upsertMemory(opts: {
-    preferences: {
-      activityLevel?: string | null;
-      cuisineTypes?: string[] | null;
-      interests?: string[] | null;
-      budget?: string | null;
-      location?: string | null;
-    };
-  }): Promise<string> {
+const storeSchema = z.object({
+  preferences: z.object({
+    ageRange: z.string().describe("Preferred age range"),
+    love: z.array(z.string()).describe("things I love"),
+    hate: z.array(z.string()).describe("things I hate"),
+    budget: z.string().describe("Preferred budget"),
+    location: z.string().describe("Preferred location"),
+  }),
+});
+
+export function initStore(config?: LangGraphRunnableConfig) {
+  async function upsertMemory(
+    opts: z.infer<typeof storeSchema>,
+  ): Promise<string> {
     const { preferences } = opts;
     if (!config || !config.store) {
       throw new Error("Config or store not provided");
@@ -36,19 +31,14 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
       configurable.userId,
     );
 
-    // Merge existing preferences with new ones
+    const existingPreferences = existingMemory?.value as z.infer<
+      typeof storeSchema
+    >;
+
     await store.put(["memories", configurable.userId], configurable.userId, {
       preferences: {
-        ...(existingMemory?.value?.preferences || {}),
+        ...existingPreferences,
         ...preferences,
-        cuisineTypes: [
-          ...(existingMemory?.value?.preferences?.cuisineTypes || []),
-          ...(preferences.cuisineTypes || []),
-        ],
-        interests: [
-          ...(existingMemory?.value?.preferences?.interests || []),
-          ...(preferences.interests || []),
-        ],
       },
     });
 
@@ -58,40 +48,9 @@ export function initializeTools(config?: LangGraphRunnableConfig) {
   const upsertMemoryTool = tool(upsertMemory, {
     name: "upsertMemory",
     description:
-      "Update the user's stored preferences. New preferences will be merged with existing ones. Never remove existing preferences.",
-    schema: z.object({
-      preferences: z.object({
-        cuisineTypes: z
-          .array(z.string())
-          .optional()
-          .describe(
-            "Preferred cuisine types example: Italian, Chinese, Japanese, etc",
-          )
-          .nullable()
-          .optional(),
-
-        interests: z
-          .array(z.string())
-          .optional()
-          .describe("Arts/Sports/Entertainment/Learning/etc")
-          .nullable()
-          .optional(),
-
-        budget: z
-          .string()
-          .optional()
-          .describe("low/medium/high")
-          .nullable()
-          .optional(),
-        location: z
-          .string()
-          .optional()
-          .describe("the address of the user")
-          .nullable()
-          .optional(),
-      }),
-    }),
+      "a tool to update the user's stored preferences. New preferences will be merged with existing ones. Never remove existing preferences.",
+    schema: storeSchema,
   });
 
-  return [upsertMemoryTool];
+  return upsertMemoryTool;
 }

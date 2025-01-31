@@ -1,5 +1,5 @@
 import { BaseStore, LangGraphRunnableConfig } from "@langchain/langgraph";
-import { initializeTools } from "./tools.js";
+import { initStore } from "./tools.js";
 import { SystemMessage } from "@langchain/core/messages";
 import { UPDATE_USER_MEMORY_PROMPT } from "./prompts.js";
 /**
@@ -39,9 +39,9 @@ export async function updateUserMemory(
   messages: any[],
   config: LangGraphRunnableConfig,
 ) {
-  const upsertMemoryTool = initializeTools(config);
+  const upsertMemoryTool = initStore(config);
   const boundLLM = llm.bind({
-    tools: upsertMemoryTool,
+    tools: [upsertMemoryTool],
     tool_choice: "upsertMemory",
   });
 
@@ -59,7 +59,7 @@ export async function updateUserMemory(
 
   return await Promise.all(
     toolCalls.map(async (tc: any) => {
-      return await upsertMemoryTool[0].invoke(tc.args as any);
+      return await upsertMemoryTool.invoke(tc.args as any);
     }),
   );
 }
