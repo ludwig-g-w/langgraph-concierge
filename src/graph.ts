@@ -69,9 +69,8 @@ export async function checkKnowledge(
 
   const store = getStoreFromConfigOrThrow(config);
   const configurable = ensureConfiguration(config);
-  await updateUserMemory(llm, [new HumanMessage(state.userRequest)], config);
   const memory = await store.get(
-    ["memories", configurable.userId],
+  ["memories", configurable.userId],
     configurable.userId,
   );
 

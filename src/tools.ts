@@ -5,50 +5,54 @@ import { z } from "zod";
 import { getStoreFromConfigOrThrow } from "./utils.js";
 
 const storeSchema = z.object({
-  preferences: z.object({
-    ageRange: z.string().describe("Preferred age range"),
-    love: z.array(z.string()).describe("things I love"),
-    hate: z.array(z.string()).describe("things I hate"),
-    budget: z.string().describe("Preferred budget"),
-    location: z.string().describe("Preferred location"),
-  }),
+  ageRange: z.string().optional().describe("Preferred age range"),
+  love: z.array(z.string()).optional().describe("things I love"),
+  hate: z.array(z.string()).optional().describe("things I hate"),
+  budget: z.string().optional().describe("Preferred budget"),
+  location: z.string().optional().describe("Preferred geographical location"),
 });
 
 export function initStore(config?: LangGraphRunnableConfig) {
   async function upsertMemory(
     opts: z.infer<typeof storeSchema>,
   ): Promise<string> {
-    const { preferences } = opts;
     if (!config || !config.store) {
       throw new Error("Config or store not provided");
     }
     const configurable = ensureConfiguration(config);
     const store = getStoreFromConfigOrThrow(config);
 
-    // Get existing preferences if any
     const existingMemory = await store.get(
       ["memories", configurable.userId],
       configurable.userId,
     );
 
-    const existingPreferences = existingMemory?.value as z.infer<
-      typeof storeSchema
-    >;
+    const existingPreferences = existingMemory?.value ?? {
+      ageRange: "",
+      love: [],
+      hate: [],
+      budget: "",
+      location: "",
+    };
+
+    console.log("existingPreferences", existingPreferences);
+    console.log("opts", opts);
 
     await store.put(["memories", configurable.userId], configurable.userId, {
-      preferences: {
-        ...existingPreferences,
-        ...preferences,
-      },
+      ...existingPreferences,
+      ...opts,
     });
 
-    return `Stored preferences ${JSON.stringify(preferences)}`;
+    return `updated preferences: ${JSON.stringify({
+      ...existingPreferences,
+      ...opts,
+    })}`;
   }
 
   const upsertMemoryTool = tool(upsertMemory, {
     name: "upsertMemory",
     description:
-      "a tool to update the user's stored preferences. New preferences will be merged with existing ones. Never remove existing preferences.",
+      "one tool to update the user's stored preferences. New preferences will be merged with existing ones. Never remove existing preferences only add new ones or update existing ones.",
     schema: storeSchema,
   });
 
